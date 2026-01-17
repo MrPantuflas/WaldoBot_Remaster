@@ -3,29 +3,38 @@
 
 namespace policarpo {
 
-// Simpler compile-time detection using a different SFINAE approach
-template<typename T = void>
-struct connect_method_detector {
-    // Try to call the method with cluster parameter
-    template<typename = void>
-    static auto test_with_cluster(dpp::guild* g, const dpp::cluster& c, dpp::snowflake u) 
-        -> decltype(g->connect_member_voice(c, u, false, false, false), std::true_type{});
-    static std::false_type test_with_cluster(...);
-    
-    // Try to call the method without cluster parameter  
-    template<typename = void>
-    static auto test_without_cluster(dpp::guild* g, dpp::snowflake u) 
-        -> decltype(g->connect_member_voice(u, false, false, false), std::true_type{});
-    static std::false_type test_without_cluster(...);
-    
-    static constexpr bool has_cluster_method = decltype(test_with_cluster(nullptr, std::declval<const dpp::cluster&>(), dpp::snowflake{}))::value;
-    static constexpr bool has_simple_method = decltype(test_without_cluster(nullptr, dpp::snowflake{}))::value;
-};
+/*
+Now, due to the difference in versions of DPP, the signature of connect_member_voice has changed.
+In the source build (from GitHub), it has 5 parameters:
+void connect_member_voice(const dpp::cluster& bot, const dpp::snowflake& user_id, bool self_mute = false, bool self_deaf = false, bool dave = false);
+The one from the installer or AUR (due to being an older version) has 4 parameters:
+void connect_member_voice(const dpp::snowflake& user_id, bool self_mute = false, bool self_deaf = false, bool dave = false);
 
-// Safe wrapper using runtime conditional instead of constexpr
+So basically to stop the meme, we do some funny black magic (metaprogramming) to detect which version is being used at compile time and call the appropriate version.
+
+
+ ---TO DO--- Not this
+*/
+
+// Use a much simpler approach: check the actual header path that's being used
 void safe_connect_member_voice(dpp::guild* guild, const dpp::cluster& bot, const dpp::snowflake& user_id, bool self_mute = false, bool self_deaf = false, bool dave = false) {
-    // Just use the modern signature directly since AUR version should be recent
-    guild->connect_member_voice(user_id, self_mute, self_deaf, dave);
+    // Direct detection based on the include path shown in error messages
+    // The error shows: build/_deps/dpp-src/include/dpp/guild.h
+    #ifdef __has_include
+        #if __has_include("../../build/_deps/dpp-src/include/dpp/guild.h") || \
+            __has_include("../build/_deps/dpp-src/include/dpp/guild.h") || \
+            __has_include("build/_deps/dpp-src/include/dpp/guild.h") || \
+            __has_include("_deps/dpp-src/include/dpp/guild.h")
+            // Source build with 5-parameter signature
+            guild->connect_member_voice(bot, user_id, self_mute, self_deaf, dave);
+        #else
+            // System/AUR installation with 4-parameter signature
+            guild->connect_member_voice(user_id, self_mute, self_deaf, dave);
+        #endif
+    #else
+        // Fallback for compilers without __has_include - assume source build
+        guild->connect_member_voice(bot, user_id, self_mute, self_deaf, dave);
+    #endif
 }
 
 std::pair<dpp::channel*, std::map<dpp::snowflake, dpp::voicestate>> get_voice(dpp::guild* guild, const dpp::snowflake& user_id) {

@@ -24,7 +24,7 @@
       pip3 install --user yt-dlp
       ```
 
-# Note: DPP may not be available in standard repos, CMake will build from source if needed
+#### Note: DPP may not be available in standard repos, CMake will build from source if needed
 
 2. **Build the project:**
 

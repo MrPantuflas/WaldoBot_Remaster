@@ -45,7 +45,7 @@ public:
   bool has_queue() const;
 
   // playback
-  bool play(float seconds = 0);              // start if idle
+  bool play(float seconds = 0.0f);             
   bool skip();
   bool pause();
   bool resume();

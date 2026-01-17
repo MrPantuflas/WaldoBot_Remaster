@@ -247,7 +247,7 @@ void policarpo::Player::update_loop_mode(loop_mode_t mode) {
   m_loop_mode = mode;
 }
 
-bool policarpo::Player::play(float seconds = 0) {
+bool policarpo::Player::play(float seconds = 0.0f) {
   std::cout << "[Player] Play called for guild " << m_guild_id << " seconds " << seconds << "\n";
   if (is_playing) return false;
 
