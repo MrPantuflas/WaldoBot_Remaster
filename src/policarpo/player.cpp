@@ -53,6 +53,35 @@ bool policarpo::Player::skip() {
   }    
 }
 
+#ifdef ENABLE_DAVE
+
+bool policarpo::Player::pause() {
+  std::lock_guard lk(m_mu);
+  std::cout << "[Player] Pause called  using DAVE for guild " << m_guild_id << "\n";
+  if (is_paused || is_stopped || is_finished) return false;
+  
+  if (dpp::voiceconn* v = voice(); v && v->voiceclient && v->voiceclient->is_ready()) {
+    m_elapsed = static_cast<float>(m_current.value().duration.count() / 1000) - v->voiceclient->get_secs_remaining();
+   // v->voiceclient->pause_audio(true);  // :contentReference[oaicite:0]{index=0}
+   // v->voiceclient->stop_audio();   // DAVE doesn't support pause, so we stop and will resume with the remaining time
+    v->voiceclient->skip_to_next_marker();
+    is_paused = true;
+    is_playing = false;
+    #ifdef DEBUG_MODE 
+      std::cout
+      << "e2ee=" << v->voiceclient->is_end_to_end_encrypted()
+      << " connected=" << v->voiceclient->is_connected()
+      << " paused=" << v->voiceclient->is_paused()
+      << " playing=" << v->voiceclient->is_playing()
+      << "\n";
+    #endif
+    return true;
+  }
+  return false;
+}
+
+#else
+
 bool policarpo::Player::pause() {
   std::lock_guard lk(m_mu);
   std::cout << "[Player] Pause called for guild " << m_guild_id << "\n";
@@ -75,24 +104,65 @@ bool policarpo::Player::pause() {
   return false;
 }
 
+#endif
+
 #ifdef ENABLE_DAVE
 
 bool policarpo::Player::resume() {
-  std::lock_guard lk(m_mu);
+  std::unique_lock lk(m_mu);
 
-  if (!is_paused) return false;
+  std::cout << "[Player] Resume called for guild " << m_guild_id << "\n";
+  if (!is_paused && !is_stopped && !is_finished) {
+    std::cout << "[Player] Nothing to resume for guild " << m_guild_id << "\n";
+    return false;
+  }
+  dpp::voiceconn* v = voice();
+  if (v && v->voiceclient && v->voiceclient->is_ready()) {
+    if (is_finished) {
+      is_finished = false;
+      is_stopped = true;
+      is_waiting = false;
+      lk.unlock();
+      get_next_track();
+      if (v->voiceclient->is_paused()) {
+        v->voiceclient->pause_audio(false);   // :contentReference[oaicite:0]{index=0}
+        is_paused = false;
+      }
+      #ifdef DEBUG_MODE 
+        std::cout
+        << "e2ee=" << v->voiceclient->is_end_to_end_encrypted()
+        << " connected=" << v->voiceclient->is_connected()
+        << " paused=" << v->voiceclient->is_paused()
+        << " playing=" << v->voiceclient->is_playing()
+        << "\n";
+      #endif
+      return play();
+    } else {
+      //v->voiceclient->stop_audio();
+      //v->voiceclient->pause_audio(false);   // :contentReference[oaicite:0]{index=0}
+      is_paused = false;
+      is_playing = false;
+      lk.unlock();
+      #ifdef DEBUG_MODE 
+        std::cout
+        << "e2ee=" << v->voiceclient->is_end_to_end_encrypted()
+        << " connected=" << v->voiceclient->is_connected()
+        << " paused=" << v->voiceclient->is_paused()
+        << " playing=" << v->voiceclient->is_playing()
+        << "\n";
+      #endif
 
-  if (dpp::voiceconn* v = voice(); v && v->voiceclient && v->voiceclient->is_ready()) {
-    std::cout << "e2ee=" << v->voiceclient->is_end_to_end_encrypted()
-    << " connected=" << v->voiceclient->is_connected()
-    << " paused=" << v->voiceclient->is_paused()
-    << " playing=" << v->voiceclient->is_playing()
-    << "\n";
-    float seconds = v->voiceclient->get_secs_remaining();
-    v->voiceclient->stop_audio();
-    is_paused = false;
-    play(seconds);
-    return true;
+      if(play(m_elapsed)) {
+        m_elapsed = 0.0f;
+        return true;
+      } else {
+        m_elapsed = 0.0f;
+        std::cout << "[Player] Failed to resume playback for guild " << m_guild_id << "\n";
+        return false;
+      };
+    }
+  } else {
+    std::cout << "[Player] Voice connection not ready on resume on guild " << m_guild_id << "\n";
   }
   return false;
 }
@@ -292,22 +362,76 @@ bool policarpo::Player::play(float seconds = 0.0f) {
     std::cout << "[Player] Error opening file for guild " << m_guild_id << " track " << m_current->id << "\n";
   }
 
-  oggz_seek_units(og, seconds * 1000, SEEK_SET);
+  /*
+    Due to a bug in DPP, pausing using DAVE makes it unrecoverable while trying to resume (some encryption stuff)
+    So we save the last position during pause and skip to the next marker, then we play again seeking from the saved position 
+    TO DO: Refactor this mess when DPP fixes the pause/resume bug with DAVE
+    */
 
-  oggz_set_read_callback(
-    og, -1,
-    [](OGGZ*, oggz_packet* packet, long, void* user_data) -> int {
-      auto* self = static_cast<Player*>(user_data);
+  if (seconds > 0.5f) {
+    std::cout << "[Player] Seeking to " << seconds << " seconds for guild " << m_guild_id << "\n";
+    
+    // Manually skip packets by reading and discarding until target position
+    oggz_off_t target_units = static_cast<oggz_off_t>(seconds * 48000);
+    
+    // Track position via callback
+    struct SeekData {
+      oggz_off_t current_pos = 0;
+      oggz_off_t target = 0;
+    } seek_data;
+    seek_data.target = target_units;
+    
+    // Use a dummy callback that tracks position but doesn't send audio
+    oggz_set_read_callback(
+      og, -1,
+      [](OGGZ*, oggz_packet* packet, long, void* user_data) -> int {
+        auto* data = static_cast<SeekData*>(user_data);
+        data->current_pos = packet->op.granulepos;
+        if (data->current_pos >= data->target) {
+          return OGGZ_STOP_OK;  // Stop when we reach target
+        }
+        return OGGZ_CONTINUE;  // Keep reading
+      },
+      &seek_data
+    );
+    
+    // Read packets until we reach target position
+    while (seek_data.current_pos < target_units) {
+      long read_bytes = oggz_read(og, BUFSIZ);
+      if (read_bytes <= 0) break;
+    }
+    
+    std::cout << "[Player] Manual seek reached position: " << seek_data.current_pos << " (target: " << target_units << ")\n";
+    
+    // Now set the actual callback for playback
+    oggz_set_read_callback(
+      og, -1,
+      [](OGGZ*, oggz_packet* packet, long, void* user_data) -> int {
+        auto* self = static_cast<Player*>(user_data);
+        dpp::voiceconn* v = self->voice();
+        if (v && v->voiceclient) {
+          v->voiceclient->send_audio_opus(packet->op.packet, packet->op.bytes);
+        }
+        return 0;
+      },
+      this
+    );
+  } else {
+    oggz_set_read_callback(
+      og, -1,
+      [](OGGZ*, oggz_packet* packet, long, void* user_data) -> int {
+        auto* self = static_cast<Player*>(user_data);
 
-      // Snapshot vc pointer each packet (no global lock held during send)
-      dpp::voiceconn* v = self->voice();
-      if (v && v->voiceclient) {
-        v->voiceclient->send_audio_opus(packet->op.packet, packet->op.bytes);
-      }
-      return 0;
-    },
-    this
-  );
+        // Snapshot vc pointer each packet (no global lock held during send)
+        dpp::voiceconn* v = self->voice();
+        if (v && v->voiceclient) {
+          v->voiceclient->send_audio_opus(packet->op.packet, packet->op.bytes);
+        }
+        return 0;
+      },
+      this
+    );
+  }
 
   // Feed packets into DPP output buffer quickly
   while (v && v->voiceclient && !v->voiceclient->terminating) {

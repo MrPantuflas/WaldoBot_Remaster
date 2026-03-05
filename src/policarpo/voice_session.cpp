@@ -17,7 +17,14 @@ So basically to stop the meme, we do some funny black magic (metaprogramming) to
 */
 
 // Use a much simpler approach: check the actual header path that's being used
-void safe_connect_member_voice(dpp::guild* guild, const dpp::cluster& bot, const dpp::snowflake& user_id, bool self_mute = false, bool self_deaf = false, bool dave = false) {
+#ifdef ENABLE_DAVE
+
+void safe_connect_member_voice(dpp::guild* guild, const dpp::cluster& bot, const dpp::snowflake& user_id, bool self_mute = false, bool self_deaf = false, bool dave = true) {
+
+#else 
+void safe_connect_member_voice(dpp::guild* guild, const dpp::cluster& bot, const dpp::snowflake& user_id, bool self_mute = false, bool self_deaf = true, bool dave = false) {
+
+#endif
     // Direct detection based on the include path shown in error messages
     // The error shows: build/_deps/dpp-src/include/dpp/guild.h
     #ifdef __has_include

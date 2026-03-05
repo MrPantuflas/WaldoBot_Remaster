@@ -135,7 +135,7 @@ void policarpo::Manager::pause(const dpp::snowflake& guild_id, const dpp::slashc
         return;
     }
 
-    if (player->get_state() != policarpo::current_state_t::CURRENT_PAUSED) {
+    if (player->get_state() == policarpo::current_state_t::CURRENT_PAUSED) {
         event.reply("❌ Ya estoy en pausa.");
         return;
     }
@@ -178,7 +178,7 @@ void policarpo::Manager::queue(const dpp::snowflake& guild_id, const dpp::slashc
     }
     
     queue_embed.add_field("📜 **Lista:**","",false);
-    for (int i = 0; i < player->m_queue.size(); i++ ) {
+    for (size_t i{0}; i < player->m_queue.size(); i++) {
         policarpo::Song song = player->m_queue[i];
         queue_embed.add_field(
             std::to_string(i + 1) + ". " + song.title + " " + format_duration(song.duration),
@@ -236,8 +236,12 @@ void policarpo::Manager::jump(const dpp::snowflake& guild_id, size_t index, cons
         event.reply(dpp::message("❌ La cola está vacía."));
         return;
     }
-    if (index == 0 || index > player->m_queue.size() || index == player->m_current_index + 1) {
+    if (index == 0 || index > player->m_queue.size()) {
         event.reply(dpp::message("❌ Índice inválido."));
+        return;
+    }
+    if (index == player->m_current_index + 1) {
+        event.reply(dpp::message("❌ Ya estoy en esa pista."));
         return;
     }
     if (player->jump_to_queue_index(index)) {

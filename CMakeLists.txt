@@ -13,7 +13,7 @@ set(DPP_INSTALL OFF)
 set(DPP_USE_EXTERNAL_JSON ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(ENABLE_DAVE OFF)
+set(ENABLE_DAVE ON)
 set(USE_SHARED_DPP ON CACHE BOOL "Use shared DPP library instead of building from source")
 
 # Set build types
@@ -32,6 +32,15 @@ endif()
 
 # Compiler flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20") # Add any additional flags common to both release and debug builds
+
+# Add ENABLE_DAVE as a compiler definition
+if(ENABLE_DAVE)
+    add_compile_definitions(ENABLE_DAVE)
+endif()
+
+if(DEBUG_MODE)
+    add_compile_definitions(DEBUG_MODE)
+endif()
 
 file(GLOB_RECURSE WALDOBOT_HEADER_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)

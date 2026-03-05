@@ -21,7 +21,7 @@ void waldo::modules::register_music(waldo::CommandRegistry& reg) {
   dpp::slashcommand play;
   play.set_name("play")
       .set_description("Pone una rola")
-      .add_option(dpp::command_option(dpp::co_string, "query", "Nombre de la canción o URL", true));
+      .add_option(dpp::command_option(dpp::co_string, "query", "Nombre de la canción o URL", false));
 
   reg.add({
     play,

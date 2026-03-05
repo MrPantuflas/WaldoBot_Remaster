@@ -37,7 +37,7 @@ int main() {
   bool dev_mode;
 
   #ifdef DEBUG_MODE
-  std::cout << "Waldo is starting in " <<  "development" << " mode.\n";
+  std::cout << "Waldo is starting in development mode.\n";
   dev_mode = true;
   #else
   std::cout << "Waldo is starting in production mode.\n";

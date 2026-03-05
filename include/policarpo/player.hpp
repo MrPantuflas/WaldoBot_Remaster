@@ -85,7 +85,7 @@ private:
 
   dpp::discord_client& m_shard;
   dpp::snowflake m_text_channel_id;
-
+  float m_elapsed{0.0f};
 
   std::condition_variable m_cv;
   mutable std::mutex m_mu;
