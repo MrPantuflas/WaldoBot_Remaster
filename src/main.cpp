@@ -29,6 +29,7 @@ int main() {
 
   waldo::Services services{};
   services.dj = std::make_shared<policarpo::Manager>(bot);
+  services.chatbot = std::make_shared<manguera::Chatbot>(bot);
 
   std::filesystem::create_directory("songs");
 
